@@ -1,26 +1,33 @@
 import React, { useState, useMemo } from 'react';
-import { Product, SaleRecord, User } from '../types';
+import { Product, SaleRecord, User, PrinterSettings } from '../types';
 import { 
-    Plus, Search, Edit2, Save, X, Package, Tag, AlertTriangle, 
+    Plus, Search, Edit2, Save, X, Tag, AlertTriangle, 
     FileText, Sparkles, Receipt, ChevronDown, ChevronUp, Users, 
-    Trash2, Filter, LayoutDashboard, TrendingUp, ShoppingBag, 
-    CreditCard, Calendar, RefreshCw
+    Trash2, Filter, TrendingUp, ShoppingBag, 
+    CreditCard, Calendar, Settings, Printer, BrainCircuit, Lightbulb
 } from 'lucide-react';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-    LineChart, Line, PieChart, Pie, Cell 
+    PieChart, Pie, Cell, AreaChart, Area 
 } from 'recharts';
 import { CATEGORIES } from '../constants';
-import { generateInventoryReport, getRestockAdvice } from '../services/geminiService';
+import { generateInventoryReport, getRestockAdvice, generateBusinessStrategy } from '../services/geminiService';
+import { printReceipt } from '../utils/receiptPrinter';
+
+type AdminTab = 'dashboard' | 'inventory' | 'add' | 'reports' | 'staff' | 'settings';
 
 interface AdminViewProps {
+  currentView: AdminTab;
   products: Product[];
   salesHistory: SaleRecord[];
   users: User[];
+  printerSettings: PrinterSettings;
   onAddProduct: (product: Product) => void;
   onUpdateProduct: (id: string, updates: Partial<Product>) => void;
   onAddUser: (user: User) => void;
   onDeleteUser: (id: string) => void;
+  onUpdateSettings: (settings: PrinterSettings) => void;
+  onChangeView: (view: AdminTab) => void;
 }
 
 const LOW_STOCK_THRESHOLD = 20;
@@ -28,8 +35,10 @@ const CHART_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
 
 type TimeFilter = 'today' | 'week' | 'month' | 'year' | 'all';
 
-const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], users, onAddProduct, onUpdateProduct, onAddUser, onDeleteUser }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'add' | 'reports' | 'staff'>('dashboard');
+const AdminView: React.FC<AdminViewProps> = ({ 
+    currentView, products, salesHistory = [], users, printerSettings,
+    onAddProduct, onUpdateProduct, onAddUser, onDeleteUser, onUpdateSettings, onChangeView 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Inventory Filter State
@@ -40,9 +49,12 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
   // Dashboard Date Filter
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
 
-  // AI Report State
+  // AI Report State (Dashboard & Reports)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [aiReport, setAiReport] = useState<string | null>(null);
+  const [showStrategyModal, setShowStrategyModal] = useState(false);
+  const [strategyContent, setStrategyContent] = useState<string | null>(null);
+  const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
 
   // Add Product Form State
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
@@ -121,8 +133,6 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
   }, [filteredStatsSales]);
 
   const timelineData = useMemo(() => {
-      // Group by day or hour depending on filter? simplified to just sales sequence for now or day buckets
-      // If today, show by Hour. If Month, show by Day.
       const data: {[key: string]: number} = {};
       
       filteredStatsSales.forEach(sale => {
@@ -168,7 +178,7 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
       image: 'https://picsum.photos/200/200'
     });
     alert("Product added successfully!");
-    setActiveTab('inventory');
+    onChangeView('inventory');
   };
 
   const handleAddUserSubmit = (e: React.FormEvent) => {
@@ -222,6 +232,30 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
       setIsLoadingAdvice(false);
   };
 
+  const handleGenerateStrategy = async () => {
+      setShowStrategyModal(true);
+      if (!strategyContent) {
+          setIsGeneratingStrategy(true);
+          const topProducts = categoryData.sort((a,b) => b.value - a.value).slice(0, 3);
+          const strategy = await generateBusinessStrategy(stats, topProducts);
+          setStrategyContent(strategy);
+          setIsGeneratingStrategy(false);
+      }
+  };
+  
+  const handleTestPrint = () => {
+      const mockSale: SaleRecord = {
+          id: 'TEST-001',
+          customerName: 'Test Customer',
+          timestamp: Date.now(),
+          items: products.slice(0, 2).map(p => ({...p, quantity: 1})),
+          total: products.slice(0, 2).reduce((s, p) => s + p.price, 0),
+          cashierId: 'admin',
+          cashierName: 'Admin'
+      };
+      printReceipt(mockSale, printerSettings);
+  };
+
   // Enhanced Search Logic for Inventory
   const filteredProducts = useMemo(() => {
     let result = products;
@@ -266,134 +300,152 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
   const totalHistorySales = filteredSalesHistory.reduce((sum, sale) => sum + sale.total, 0);
 
   return (
-    <div className="h-full overflow-y-auto p-8 bg-gray-50/50">
-      <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-            <h2 className="text-3xl font-bold text-gray-900">Admin Dashboard</h2>
-            <p className="text-gray-500 mt-1">Manage business overview, inventory and staff.</p>
-        </div>
-        <div className="flex bg-white p-1 rounded-lg border border-gray-200 shadow-sm flex-wrap">
-            <button 
-                onClick={() => setActiveTab('dashboard')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-                <LayoutDashboard size={16}/> Overview
-            </button>
-            <button 
-                onClick={() => setActiveTab('inventory')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'inventory' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-                <Package size={16}/> Inventory
-            </button>
-            <button 
-                onClick={() => setActiveTab('add')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'add' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-                <Plus size={16}/> Add Product
-            </button>
-            <button 
-                onClick={() => setActiveTab('reports')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'reports' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-                <FileText size={16}/> Reports
-            </button>
-            <button 
-                onClick={() => setActiveTab('staff')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'staff' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-                <Users size={16}/> Staff
-            </button>
-        </div>
-      </header>
-
+    <div className="h-full overflow-y-auto bg-gray-50/50 relative">
+      
       {/* --- DASHBOARD TAB --- */}
-      {activeTab === 'dashboard' && (
-        <div className="space-y-8">
-            {/* Filters */}
-            <div className="flex justify-end items-center gap-3 bg-white p-2 rounded-xl border border-gray-100 w-fit ml-auto shadow-sm">
-                 <Calendar size={16} className="text-gray-400 ml-2" />
-                 {(['today', 'week', 'month', 'year', 'all'] as TimeFilter[]).map((f) => (
-                     <button
-                        key={f}
-                        onClick={() => setTimeFilter(f)}
-                        className={`px-3 py-1 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${timeFilter === f ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+      {currentView === 'dashboard' && (
+        <div className="p-8 space-y-8 max-w-7xl mx-auto">
+            {/* Welcome & Controls Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-200 pb-6">
+                <div>
+                    <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Dashboard Overview</h2>
+                    <p className="text-gray-500 mt-1 font-medium">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                </div>
+                
+                <div className="flex flex-wrap gap-3 items-center">
+                     <div className="flex items-center bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm">
+                        {(['today', 'week', 'month', 'year'] as TimeFilter[]).map((f) => (
+                            <button
+                                key={f}
+                                onClick={() => setTimeFilter(f)}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                                    timeFilter === f 
+                                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' 
+                                    : 'text-gray-500 hover:bg-gray-50'
+                                }`}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                     </div>
+
+                     <button 
+                        onClick={handleGenerateStrategy}
+                        className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-xl font-bold shadow-lg shadow-violet-200 hover:shadow-xl hover:scale-105 transition-all"
                      >
-                         {f}
+                        <Sparkles size={18} />
+                        AI Sales Strategy
                      </button>
-                 ))}
+                </div>
             </div>
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
-                        <CreditCard size={24} />
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <CreditCard size={80} />
+                    </div>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                            <CreditCard size={20} />
+                        </div>
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Revenue</span>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500 font-medium">Total Revenue</p>
-                        <h3 className="text-2xl font-bold text-gray-900">₱{stats.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                        <h3 className="text-3xl font-bold text-gray-900">₱{stats.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                        <p className="text-xs text-green-500 font-medium mt-1 flex items-center gap-1">
+                            <TrendingUp size={12} />
+                            +12% vs last period
+                        </p>
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center">
-                        <ShoppingBag size={24} />
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <ShoppingBag size={80} />
+                    </div>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center">
+                            <ShoppingBag size={20} />
+                        </div>
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Transactions</span>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500 font-medium">Transactions</p>
-                        <h3 className="text-2xl font-bold text-gray-900">{stats.totalOrders}</h3>
+                        <h3 className="text-3xl font-bold text-gray-900">{stats.totalOrders}</h3>
+                        <p className="text-xs text-gray-400 font-medium mt-1">Total orders processed</p>
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
-                        <TrendingUp size={24} />
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Tag size={80} />
+                    </div>
+                     <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center">
+                            <Tag size={20} />
+                        </div>
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Avg. Order</span>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500 font-medium">Avg. Order Value</p>
-                        <h3 className="text-2xl font-bold text-gray-900">₱{stats.averageOrder.toFixed(0)}</h3>
+                        <h3 className="text-3xl font-bold text-gray-900">₱{stats.averageOrder.toFixed(0)}</h3>
+                        <p className="text-xs text-gray-400 font-medium mt-1">Per customer spend</p>
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow border-l-4 border-l-amber-500">
-                    <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
-                        <AlertTriangle size={24} />
+                <div className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-amber-500 border-y border-r border-gray-100 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <AlertTriangle size={80} />
+                    </div>
+                     <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center">
+                            <AlertTriangle size={20} />
+                        </div>
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Needs Attention</span>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500 font-medium">Low Stock Items</p>
-                        <h3 className="text-2xl font-bold text-gray-900">{stats.lowStockCount}</h3>
+                        <h3 className="text-3xl font-bold text-gray-900">{stats.lowStockCount}</h3>
+                        <p className="text-xs text-amber-600 font-bold mt-1">Low Stock Items</p>
                     </div>
                 </div>
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
-                    <h3 className="text-lg font-bold text-gray-900 mb-6">Sales Trend ({timeFilter})</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={timelineData} margin={{top: 0, right: 0, left: -20, bottom: 40}}>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[450px]">
+                    <div className="flex justify-between items-center mb-6">
+                         <h3 className="text-lg font-bold text-gray-900">Sales Trend Analysis</h3>
+                         <span className="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-500 uppercase">{timeFilter}</span>
+                    </div>
+                    <ResponsiveContainer width="100%" height="85%">
+                        <AreaChart data={timelineData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
+                            <defs>
+                                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
                             <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
                             <Tooltip 
                                 cursor={{fill: '#f3f4f6'}}
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
                             />
-                            <Bar dataKey="sales" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                        </BarChart>
+                            <Area type="monotone" dataKey="sales" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
+                        </AreaChart>
                     </ResponsiveContainer>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
-                    <h3 className="text-lg font-bold text-gray-900 mb-6">Sales by Category</h3>
-                    <ResponsiveContainer width="100%" height="80%">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[450px]">
+                    <h3 className="text-lg font-bold text-gray-900 mb-6">Top Categories</h3>
+                    <ResponsiveContainer width="100%" height="75%">
                         <PieChart>
                             <Pie
                                 data={categoryData}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={60}
-                                outerRadius={80}
+                                innerRadius={70}
+                                outerRadius={90}
                                 paddingAngle={5}
                                 dataKey="value"
                             >
@@ -404,11 +456,14 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
                             <Tooltip />
                         </PieChart>
                     </ResponsiveContainer>
-                    <div className="flex flex-wrap justify-center gap-3 mt-2">
-                        {categoryData.slice(0, 4).map((entry, index) => (
-                            <div key={entry.name} className="flex items-center text-xs text-gray-600">
-                                <span className="w-2 h-2 rounded-full mr-1" style={{backgroundColor: CHART_COLORS[index % CHART_COLORS.length]}}></span>
-                                {entry.name}
+                    <div className="flex flex-col gap-2 mt-4">
+                        {categoryData.slice(0, 3).map((entry, index) => (
+                            <div key={entry.name} className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full" style={{backgroundColor: CHART_COLORS[index % CHART_COLORS.length]}}></span>
+                                    <span className="text-gray-600">{entry.name}</span>
+                                </div>
+                                <span className="font-bold text-gray-900">₱{entry.value.toLocaleString()}</span>
                             </div>
                         ))}
                     </div>
@@ -418,21 +473,32 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
       )}
 
       {/* --- INVENTORY TAB --- */}
-      {activeTab === 'inventory' && (
-        <div className="space-y-4">
+      {currentView === 'inventory' && (
+        <div className="p-8 space-y-6">
+             <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-900">Inventory Management</h2>
+                <button 
+                    onClick={() => onChangeView('add')}
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                    <Plus size={18} />
+                    Add Product
+                </button>
+             </div>
+
              {/* AI Restock Advice Block (Visible when populated) */}
              {restockAdvice && (
-                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-6 relative">
+                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-6 relative animate-in slide-in-from-top-2">
                     <button onClick={() => setRestockAdvice(null)} className="absolute top-4 right-4 text-indigo-400 hover:text-indigo-700">
                         <X size={18} />
                     </button>
                     <div className="flex items-start gap-3">
-                        <div className="bg-indigo-600 text-white p-2 rounded-lg mt-1">
-                            <Sparkles size={18} />
+                        <div className="bg-indigo-600 text-white p-2 rounded-lg mt-1 shadow-lg shadow-indigo-200">
+                            <BrainCircuit size={20} />
                         </div>
                         <div className="flex-1">
-                            <h4 className="font-bold text-indigo-900 mb-2">AI Restock Plan</h4>
-                            <div className="prose prose-sm text-indigo-800 whitespace-pre-wrap">
+                            <h4 className="font-bold text-indigo-900 mb-2 text-lg">AI Restock Plan</h4>
+                            <div className="prose prose-sm text-indigo-800 whitespace-pre-wrap bg-white/50 p-4 rounded-lg border border-indigo-100">
                                 {restockAdvice}
                             </div>
                         </div>
@@ -441,7 +507,7 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
              )}
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center">
+                <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center bg-gray-50/50">
                     <div className="relative flex-1 w-full sm:w-auto">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                         <input 
@@ -449,7 +515,7 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
                             placeholder="Search by name or barcode..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -470,14 +536,14 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
                             <button
                                 onClick={handleGetRestockAdvice}
                                 disabled={isLoadingAdvice || filteredProducts.length === 0}
-                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isLoadingAdvice ? (
                                     <span className="animate-pulse">Thinking...</span>
                                 ) : (
                                     <>
                                         <Sparkles size={16} />
-                                        Ask AI
+                                        Analyze Stock
                                     </>
                                 )}
                             </button>
@@ -503,7 +569,7 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
                                     return (
                                         <tr 
                                             key={product.id} 
-                                            className={`transition-colors ${isLowStock ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}
+                                            className={`transition-colors ${isLowStock ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-gray-50'}`}
                                         >
                                             <td className="px-6 py-4 font-medium text-gray-900">
                                                 {product.name}
@@ -583,13 +649,16 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
       )}
 
       {/* --- ADD PRODUCT TAB --- */}
-      {activeTab === 'add' && (
-        <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-                <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <Package className="text-indigo-600" />
-                    New Product Details
-                </h3>
+      {currentView === 'add' && (
+        <div className="p-8 max-w-3xl mx-auto">
+            <div className="flex items-center gap-2 mb-6">
+                 <button onClick={() => onChangeView('inventory')} className="text-gray-400 hover:text-gray-600">
+                     <X size={24} />
+                 </button>
+                 <h2 className="text-2xl font-bold text-gray-900">Add New Product</h2>
+            </div>
+            
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
                 <form onSubmit={handleAddSubmit} className="space-y-6">
                     <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-2">
@@ -666,7 +735,7 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
                     <div className="pt-4 flex justify-end gap-3">
                          <button 
                             type="button"
-                            onClick={() => setActiveTab('inventory')}
+                            onClick={() => onChangeView('inventory')}
                             className="px-6 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
                         >
                             Cancel
@@ -684,8 +753,8 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
       )}
 
       {/* --- STAFF TAB --- */}
-      {activeTab === 'staff' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {currentView === 'staff' && (
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Staff List */}
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-100">
@@ -783,9 +852,114 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
         </div>
       )}
 
+      {/* --- SETTINGS TAB --- */}
+      {currentView === 'settings' && (
+        <div className="p-8 max-w-3xl mx-auto">
+             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                 <div className="p-6 border-b border-gray-100">
+                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <Settings className="text-indigo-600" />
+                        System Configuration
+                    </h3>
+                 </div>
+                 
+                 <div className="p-6 space-y-8">
+                     {/* Store Details Section */}
+                     <div className="space-y-4">
+                         <h4 className="text-sm uppercase tracking-wider font-semibold text-gray-500 border-b border-gray-100 pb-2">Store Information (Receipt Header)</h4>
+                         <div className="grid grid-cols-2 gap-4">
+                             <div className="col-span-2">
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
+                                 <input 
+                                     type="text" 
+                                     className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                                     value={printerSettings.storeName}
+                                     onChange={e => onUpdateSettings({...printerSettings, storeName: e.target.value})}
+                                 />
+                             </div>
+                             <div className="col-span-2">
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                                 <input 
+                                     type="text" 
+                                     className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                                     value={printerSettings.address}
+                                     onChange={e => onUpdateSettings({...printerSettings, address: e.target.value})}
+                                 />
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">TIN / Tax ID</label>
+                                 <input 
+                                     type="text" 
+                                     className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                                     value={printerSettings.tin}
+                                     onChange={e => onUpdateSettings({...printerSettings, tin: e.target.value})}
+                                 />
+                             </div>
+                              <div className="col-span-2">
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Footer Message</label>
+                                 <input 
+                                     type="text" 
+                                     className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                                     value={printerSettings.footerMessage}
+                                     onChange={e => onUpdateSettings({...printerSettings, footerMessage: e.target.value})}
+                                 />
+                             </div>
+                         </div>
+                     </div>
+
+                     {/* Printer Config Section */}
+                     <div className="space-y-4">
+                         <h4 className="text-sm uppercase tracking-wider font-semibold text-gray-500 border-b border-gray-100 pb-2">Printer Hardware</h4>
+                         <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Paper Width</label>
+                                 <div className="flex gap-2">
+                                     <button 
+                                        onClick={() => onUpdateSettings({...printerSettings, paperWidth: '58mm'})}
+                                        className={`flex-1 py-2 border rounded-lg text-sm font-medium ${printerSettings.paperWidth === '58mm' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                     >
+                                         58mm (Standard)
+                                     </button>
+                                     <button 
+                                        onClick={() => onUpdateSettings({...printerSettings, paperWidth: '80mm'})}
+                                        className={`flex-1 py-2 border rounded-lg text-sm font-medium ${printerSettings.paperWidth === '80mm' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                     >
+                                         80mm (Wide)
+                                     </button>
+                                 </div>
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Font Size</label>
+                                 <select 
+                                     value={printerSettings.fontSize}
+                                     onChange={e => onUpdateSettings({...printerSettings, fontSize: e.target.value as any})}
+                                     className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-white"
+                                 >
+                                     <option value="small">Small (Compact)</option>
+                                     <option value="medium">Medium (Standard)</option>
+                                     <option value="large">Large (Readable)</option>
+                                 </select>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div className="pt-4 border-t border-gray-100 flex justify-end">
+                         <button 
+                            onClick={handleTestPrint}
+                            className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-colors"
+                         >
+                             <Printer size={18} />
+                             Test Print Receipt
+                         </button>
+                     </div>
+                 </div>
+             </div>
+        </div>
+      )}
+
       {/* --- REPORTS TAB --- */}
-      {activeTab === 'reports' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {currentView === 'reports' && (
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Sales History Column */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
                 <div className="p-6 border-b border-gray-100">
@@ -914,6 +1088,65 @@ const AdminView: React.FC<AdminViewProps> = ({ products, salesHistory = [], user
             </div>
         </div>
       )}
+
+      {/* --- AI STRATEGY MODAL --- */}
+      {showStrategyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+                 <div className="p-6 bg-gradient-to-r from-violet-600 to-indigo-600 flex justify-between items-center text-white rounded-t-2xl">
+                     <div className="flex items-center gap-3">
+                         <div className="bg-white/20 p-2 rounded-lg">
+                             <Lightbulb size={24} />
+                         </div>
+                         <div>
+                             <h3 className="text-xl font-bold">AI Business Advisor</h3>
+                             <p className="text-xs text-indigo-100 opacity-90">Strategic Growth Insights</p>
+                         </div>
+                     </div>
+                     <button onClick={() => setShowStrategyModal(false)} className="text-white/70 hover:text-white hover:bg-white/10 p-2 rounded-full transition-all">
+                         <X size={24} />
+                     </button>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto p-8">
+                     {isGeneratingStrategy ? (
+                         <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                             <div className="relative">
+                                 <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+                                 <div className="absolute inset-0 flex items-center justify-center">
+                                     <Sparkles size={20} className="text-indigo-600" />
+                                 </div>
+                             </div>
+                             <div className="text-center">
+                                 <h4 className="font-bold text-gray-900 text-lg">Analyzing Sales Data...</h4>
+                                 <p className="text-gray-500 text-sm">Formulating growth strategies for your store.</p>
+                             </div>
+                         </div>
+                     ) : (
+                         <div className="prose prose-indigo max-w-none">
+                             {strategyContent ? (
+                                 <div className="whitespace-pre-wrap leading-relaxed text-gray-700">
+                                     {strategyContent}
+                                 </div>
+                             ) : (
+                                 <p className="text-center text-red-500">Failed to load strategy.</p>
+                             )}
+                         </div>
+                     )}
+                 </div>
+                 
+                 <div className="p-4 border-t border-gray-100 flex justify-end">
+                     <button 
+                        onClick={() => setShowStrategyModal(false)}
+                        className="px-6 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                     >
+                         Close
+                     </button>
+                 </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };

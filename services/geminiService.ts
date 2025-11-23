@@ -179,4 +179,40 @@ export const getRestockAdvice = async (lowStockItems: Product[]): Promise<string
   } catch (e) {
       return "Error generating advice.";
   }
-}
+};
+
+export const generateBusinessStrategy = async (stats: any, topProducts: any[]): Promise<string> => {
+    const ai = getClient();
+    if (!ai) return "AI unavailable.";
+
+    const prompt = `
+      You are a Strategic Business Consultant for a retail grocery store in the Philippines.
+      
+      Current Stats:
+      - Total Revenue: ₱${stats.totalSales}
+      - Total Transactions: ${stats.totalOrders}
+      - Average Order Value: ₱${stats.averageOrder.toFixed(2)}
+      
+      Top Selling Products Categories (by revenue):
+      ${JSON.stringify(topProducts)}
+
+      Task: Provide 3 specific, actionable strategies to increase revenue next week.
+      Focus on:
+      1. Product Bundling (Sari-sari store style)
+      2. Customer Retention
+      3. Inventory optimization
+
+      Keep the tone professional, encouraging, and culturally relevant to the Philippines market.
+      Format with clear headings.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+        return response.text || "Could not generate strategy.";
+    } catch (e) {
+        return "Error generating strategy.";
+    }
+};

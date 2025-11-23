@@ -1,6 +1,6 @@
-import { CartItem, SaleRecord } from '../types';
+import { CartItem, SaleRecord, PrinterSettings } from '../types';
 
-export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale Grocery") => {
+export const printReceipt = (record: SaleRecord, settings: PrinterSettings) => {
   const printWindow = window.open('', '', 'width=400,height=600');
   if (!printWindow) return;
 
@@ -18,6 +18,17 @@ export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale 
 
   const dateStr = new Date(record.timestamp).toLocaleString();
 
+  // Map font sizes to CSS values
+  const fontSizeMap = {
+    small: '10px',
+    medium: '12px',
+    large: '14px'
+  };
+  const baseFontSize = fontSizeMap[settings.fontSize];
+  
+  // Scale headings relative to base font
+  const h2Size = settings.fontSize === 'large' ? '18px' : (settings.fontSize === 'medium' ? '16px' : '14px');
+
   const html = `
     <html>
       <head>
@@ -25,10 +36,10 @@ export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale 
         <style>
           body {
             font-family: 'Courier New', monospace;
-            width: 58mm; /* Standard Thermal Paper Width */
+            width: ${settings.paperWidth};
             margin: 0;
             padding: 5px;
-            font-size: 12px;
+            font-size: ${baseFontSize};
             color: #000;
           }
           .header {
@@ -37,12 +48,11 @@ export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale 
             border-bottom: 1px dashed #000;
             padding-bottom: 5px;
           }
-          .header h2 { margin: 0; font-size: 16px; font-weight: bold; }
-          .header p { margin: 2px 0; font-size: 10px; }
+          .header h2 { margin: 0; font-size: ${h2Size}; font-weight: bold; }
+          .header p { margin: 2px 0; }
           
           .info {
             margin-bottom: 10px;
-            font-size: 10px;
           }
           .row {
             display: flex;
@@ -58,7 +68,6 @@ export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale 
             margin-bottom: 5px;
           }
           .details {
-            font-size: 10px;
             color: #333;
           }
           
@@ -68,22 +77,21 @@ export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale 
           }
           .totals .row {
             font-weight: bold;
-            font-size: 14px;
+            font-size: 1.1em;
             margin-top: 5px;
           }
           
           .footer {
             text-align: center;
             margin-top: 20px;
-            font-size: 10px;
           }
         </style>
       </head>
       <body>
         <div class="header">
-          <h2>${storeName}</h2>
-          <p>Manila, Philippines</p>
-          <p>TIN: 000-000-000-000</p>
+          <h2>${settings.storeName}</h2>
+          <p>${settings.address}</p>
+          <p>TIN: ${settings.tin}</p>
         </div>
         
         <div class="info">
@@ -102,14 +110,13 @@ export const printReceipt = (record: SaleRecord, storeName: string = "SmartSale 
             <span>TOTAL</span>
             <span>PHP ${record.total.toFixed(2)}</span>
           </div>
-          <div style="font-size: 10px; margin-top: 5px;">
+          <div style="font-size: 0.9em; margin-top: 5px;">
             (VAT Included)
           </div>
         </div>
 
         <div class="footer">
-          <p>Thank you for shopping!</p>
-          <p>This serves as your official receipt.</p>
+          <p>${settings.footerMessage}</p>
         </div>
       </body>
     </html>

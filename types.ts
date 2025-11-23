@@ -40,3 +40,12 @@ export interface ChatMessage {
   text: string;
   isError?: boolean;
 }
+
+export interface PrinterSettings {
+  paperWidth: '58mm' | '80mm';
+  fontSize: 'small' | 'medium' | 'large';
+  storeName: string;
+  address: string;
+  tin: string;
+  footerMessage: string;
+}
