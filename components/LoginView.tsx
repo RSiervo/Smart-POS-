@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { Store, User as UserIcon, Lock, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Store, User as UserIcon, Lock, ArrowRight, Eye, EyeOff, Loader2, Moon, Sun } from 'lucide-react';
 
 interface LoginViewProps {
   users: User[];
   onLogin: (user: User) => void;
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
 }
 
-const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
+const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onToggleTheme }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -33,20 +35,30 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50 font-sans text-gray-900">
+    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-gray-100 transition-colors relative">
+      {/* Theme Toggle Overlay */}
+      <div className="absolute top-4 right-4 z-50">
+        <button 
+          onClick={onToggleTheme}
+          className="p-2 rounded-full bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 shadow-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        >
+          {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+      </div>
+
       {/* Left Side - Form */}
-      <div className="flex-1 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-20 xl:px-24 bg-white">
+      <div className="flex-1 flex flex-col justify-center py-12 px-6 sm:px-6 lg:px-20 xl:px-24 bg-white dark:bg-gray-800 transition-colors">
         <div className="mx-auto w-full max-w-sm lg:w-96">
-          <div className="flex items-center gap-3 text-indigo-600 mb-10">
-             <div className="p-2.5 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200">
+          <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-10">
+             <div className="p-2.5 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
                 <Store size={28} className="text-white" />
              </div>
-             <span className="text-2xl font-bold tracking-tight text-gray-900">SmartSale POS</span>
+             <span className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">SmartSale POS</span>
           </div>
 
           <div>
-            <h2 className="text-3xl font-bold tracking-tight text-gray-900">Welcome back</h2>
-            <p className="mt-2 text-sm text-gray-500">
+            <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Welcome back</h2>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               Please sign in to your account to access the terminal.
             </p>
           </div>
@@ -54,7 +66,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
           <div className="mt-8">
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-gray-700">Username</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Username</label>
                 <div className="mt-2 relative rounded-md shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <UserIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
@@ -64,14 +76,14 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="block w-full pl-10 py-3 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border outline-none transition-all shadow-sm"
+                    className="block w-full pl-10 py-3 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border outline-none transition-all shadow-sm bg-white dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                     placeholder="Enter your username"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700">Password</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Password</label>
                 <div className="mt-2 relative rounded-md shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Lock className="h-5 w-5 text-gray-400" aria-hidden="true" />
@@ -81,13 +93,13 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full pl-10 pr-10 py-3 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border outline-none transition-all shadow-sm"
+                    className="block w-full pl-10 pr-10 py-3 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border outline-none transition-all shadow-sm bg-white dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                     placeholder="Enter your password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer text-gray-400 hover:text-gray-600"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -100,25 +112,25 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
                     id="remember-me"
                     name="remember-me"
                     type="checkbox"
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600"
                   />
-                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-600">
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-600 dark:text-gray-400">
                     Remember me
                   </label>
                 </div>
 
                 <div className="text-sm">
-                  <a href="#" className="font-medium text-indigo-600 hover:text-indigo-500">
+                  <a href="#" className="font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
                     Forgot password?
                   </a>
                 </div>
               </div>
 
               {error && (
-                <div className="rounded-lg bg-red-50 p-4 border border-red-100">
+                <div className="rounded-lg bg-red-50 dark:bg-red-900/30 p-4 border border-red-100 dark:border-red-800">
                   <div className="flex">
                     <div className="ml-3">
-                      <h3 className="text-sm font-medium text-red-800">{error}</h3>
+                      <h3 className="text-sm font-medium text-red-800 dark:text-red-300">{error}</h3>
                     </div>
                   </div>
                 </div>
@@ -127,7 +139,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-indigo-200 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-wait transition-all active:scale-[0.98]"
+                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-wait transition-all active:scale-[0.98]"
               >
                 {isLoading ? (
                    <Loader2 className="animate-spin h-5 w-5" />
@@ -140,25 +152,25 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
               </button>
             </form>
             
-            <div className="mt-10 pt-6 border-t border-gray-100">
+            <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-700">
                 <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-3">Demo Accounts</p>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
                         <div className="flex items-center gap-2 mb-1">
                             <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                            <span className="font-semibold text-xs text-gray-900">Admin</span>
+                            <span className="font-semibold text-xs text-gray-900 dark:text-gray-100">Admin</span>
                         </div>
-                        <div className="text-xs text-gray-500 font-mono">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">
                             User: admin<br/>
                             Pass: 123
                         </div>
                     </div>
-                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
                         <div className="flex items-center gap-2 mb-1">
                             <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                            <span className="font-semibold text-xs text-gray-900">Cashier</span>
+                            <span className="font-semibold text-xs text-gray-900 dark:text-gray-100">Cashier</span>
                         </div>
-                        <div className="text-xs text-gray-500 font-mono">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">
                             User: cashier1<br/>
                             Pass: 123
                         </div>

@@ -74,11 +74,21 @@ export const printReceipt = (record: SaleRecord, settings: PrinterSettings) => {
           .totals {
             text-align: right;
             margin-top: 10px;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 5px;
           }
           .totals .row {
+            margin-top: 2px;
+          }
+          .total-row {
             font-weight: bold;
             font-size: 1.1em;
-            margin-top: 5px;
+            margin-top: 5px !important;
+            margin-bottom: 5px !important;
+          }
+          .payment-info {
+             margin-top: 5px;
+             font-weight: bold;
           }
           
           .footer {
@@ -106,12 +116,22 @@ export const printReceipt = (record: SaleRecord, settings: PrinterSettings) => {
         </div>
 
         <div class="totals">
-          <div class="row">
+          <div class="row total-row">
             <span>TOTAL</span>
             <span>PHP ${record.total.toFixed(2)}</span>
           </div>
-          <div style="font-size: 0.9em; margin-top: 5px;">
-            (VAT Included)
+          <div class="row payment-info">
+             <span>CASH</span>
+             <span>${record.amountTendered.toFixed(2)}</span>
+          </div>
+          <div class="row payment-info">
+             <span>CHANGE</span>
+             <span>${record.change.toFixed(2)}</span>
+          </div>
+          
+          <div style="font-size: 0.9em; margin-top: 10px; font-weight: normal;">
+             <div class="row"><span>VATable</span> <span>${(record.total / 1.12).toFixed(2)}</span></div>
+             <div class="row"><span>VAT (12%)</span> <span>${(record.total - (record.total / 1.12)).toFixed(2)}</span></div>
           </div>
         </div>
 

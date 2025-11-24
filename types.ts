@@ -19,6 +19,8 @@ export interface SaleRecord {
   timestamp: number;
   items: CartItem[];
   total: number;
+  amountTendered: number;
+  change: number;
   cashierId: string;
   cashierName: string;
 }
@@ -48,4 +50,12 @@ export interface PrinterSettings {
   address: string;
   tin: string;
   footerMessage: string;
+}
+
+export interface Notification {
+  id: string;
+  type: 'sale' | 'alert' | 'system';
+  message: string;
+  timestamp: number;
+  read: boolean;
 }
