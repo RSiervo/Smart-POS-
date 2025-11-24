@@ -83,6 +83,7 @@ const AdminView: React.FC<AdminViewProps> = ({
   
   // Delivery View State
   const [expandedDeliveryId, setExpandedDeliveryId] = useState<string | null>(null);
+  const [deliveryFilter, setDeliveryFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
   // Add Product Form State
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
@@ -189,6 +190,10 @@ const AdminView: React.FC<AdminViewProps> = ({
       return Object.keys(data).map(k => ({ name: k, sales: data[k] }));
   }, [filteredStatsSales, timeFilter]);
 
+  const filteredDeliveries = useMemo(() => {
+      if (deliveryFilter === 'all') return deliveryRequests;
+      return deliveryRequests.filter(r => r.status === deliveryFilter);
+  }, [deliveryRequests, deliveryFilter]);
 
   // --- Actions ---
 
@@ -979,21 +984,43 @@ const AdminView: React.FC<AdminViewProps> = ({
       {/* --- DELIVERIES TAB --- */}
       {currentView === 'deliveries' && (
         <div className="p-4 md:p-8 space-y-6 animate-fade-in">
-             <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                    <Truck className="text-indigo-600 dark:text-indigo-400" />
-                    Delivery Requests
-                </h2>
+             <div className="flex flex-col gap-4">
+                 <div className="flex justify-between items-center">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                        <Truck className="text-indigo-600 dark:text-indigo-400" />
+                        Delivery Requests
+                    </h2>
+                 </div>
+                 
+                 {/* Filter Tabs */}
+                 <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                    {(['all', 'pending', 'approved', 'rejected'] as const).map(filter => (
+                        <button
+                            key={filter}
+                            onClick={() => setDeliveryFilter(filter)}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold capitalize whitespace-nowrap transition-all border ${
+                                deliveryFilter === filter 
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            }`}
+                        >
+                            {filter} 
+                            <span className={`ml-2 text-xs py-0.5 px-1.5 rounded-full ${deliveryFilter === filter ? 'bg-white/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                                {filter === 'all' ? deliveryRequests.length : deliveryRequests.filter(r => r.status === filter).length}
+                            </span>
+                        </button>
+                    ))}
+                 </div>
              </div>
              
              <div className="grid grid-cols-1 gap-4">
-                 {deliveryRequests.length === 0 ? (
+                 {filteredDeliveries.length === 0 ? (
                      <div className="bg-white dark:bg-gray-800 rounded-2xl p-12 flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-200 dark:border-gray-700">
                          <Truck size={48} className="opacity-20 mb-4" />
                          <p>No delivery requests found.</p>
                      </div>
                  ) : (
-                     deliveryRequests.map(request => (
+                     filteredDeliveries.map(request => (
                          <div key={request.id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-slide-up">
                              <div 
                                 className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors gap-4"
