@@ -317,7 +317,7 @@ const CashierView: React.FC<CashierViewProps> = ({
         </div>
 
         {/* Transaction List */}
-        <div className="flex-1 overflow-y-auto pb-24 md:pb-0"> 
+        <div className="flex-1 overflow-y-auto pb-32 md:pb-0"> 
             <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0 z-10 shadow-sm">
                     <tr>
@@ -331,7 +331,7 @@ const CashierView: React.FC<CashierViewProps> = ({
                     {cart.length === 0 ? (
                         <tr>
                             <td colSpan={4}>
-                                <div className="h-48 md:h-64 flex flex-col items-center justify-center text-gray-300 dark:text-gray-600">
+                                <div className="h-48 md:h-64 flex flex-col items-center justify-center text-gray-300 dark:text-gray-600 animate-fade-in">
                                     <ShoppingCart size={48} strokeWidth={1} className="mb-4 opacity-50" />
                                     <p className="text-lg font-medium">Cart is empty</p>
                                     <p className="text-sm">Scan a barcode</p>
@@ -340,7 +340,7 @@ const CashierView: React.FC<CashierViewProps> = ({
                         </tr>
                     ) : (
                         cart.map((item) => (
-                            <tr key={item.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20 transition-colors">
+                            <tr key={item.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20 transition-colors animate-slide-in-right">
                                 <td className="py-3 px-4 md:px-6">
                                     <div className="flex items-center gap-3">
                                         <div className="w-8 h-8 md:w-10 md:h-10 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex-shrink-0 overflow-hidden hidden sm:block">
@@ -436,7 +436,7 @@ const CashierView: React.FC<CashierViewProps> = ({
       </div>
 
       {/* --- RIGHT SIDE (Bottom on Mobile - Hidden/Repurposed): CONTROLS & TOTALS (35% Desktop) --- */}
-      <div className="hidden md:flex w-[400px] flex-col bg-gray-50 dark:bg-gray-900 shadow-xl z-10 border-l border-gray-200 dark:border-gray-700 transition-colors order-1 md:order-2 shrink-0">
+      <div className="hidden md:flex w-80 lg:w-[400px] flex-col bg-gray-50 dark:bg-gray-900 shadow-xl z-10 border-l border-gray-200 dark:border-gray-700 transition-colors order-1 md:order-2 shrink-0">
         
         {/* User Info (Desktop) */}
         <div className="h-16 bg-gray-900 dark:bg-black text-white flex items-center justify-between px-6 shadow-lg">
@@ -488,12 +488,12 @@ const CashierView: React.FC<CashierViewProps> = ({
             </div>
 
             {/* Last Scanned Item Display */}
-            <div className="bg-indigo-600 dark:bg-indigo-700 rounded-2xl p-6 text-white shadow-lg shadow-indigo-200 dark:shadow-none relative overflow-hidden min-h-[140px] flex flex-col justify-center transition-colors">
+            <div className="bg-indigo-600 dark:bg-indigo-700 rounded-2xl p-6 text-white shadow-lg shadow-indigo-200 dark:shadow-none relative overflow-hidden min-h-[140px] flex flex-col justify-center transition-colors group">
                 <div className="absolute top-0 right-0 p-4 opacity-10">
                     <History size={80} />
                 </div>
                 {lastScannedItem ? (
-                    <div className="relative z-10 animate-in slide-in-from-right fade-in duration-300">
+                    <div className="relative z-10 animate-bounce-subtle">
                          <p className="text-indigo-200 text-xs font-bold uppercase tracking-wider mb-1">Last Added</p>
                          <h3 className="text-xl font-bold leading-tight mb-2 line-clamp-2">{lastScannedItem.name}</h3>
                          <div className="flex items-baseline gap-2">
@@ -545,8 +545,8 @@ const CashierView: React.FC<CashierViewProps> = ({
 
       {/* Quantity Edit Modal */}
       {editingQuantityItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
-             <div className="bg-white dark:bg-gray-800 w-[320px] rounded-3xl shadow-2xl p-6 transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fade-in">
+             <div className="bg-white dark:bg-gray-800 w-[320px] rounded-3xl shadow-2xl p-6 transition-colors animate-scale-in">
                  <div className="flex justify-between items-center mb-6">
                      <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
                          <Hash size={18} />
@@ -601,8 +601,8 @@ const CashierView: React.FC<CashierViewProps> = ({
 
       {/* Calculator Modal */}
       {showCalculator && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-in fade-in">
-             <div className="bg-white dark:bg-gray-800 w-[300px] rounded-3xl shadow-2xl p-6 transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fade-in">
+             <div className="bg-white dark:bg-gray-800 w-[300px] rounded-3xl shadow-2xl p-6 transition-colors animate-scale-in">
                  <div className="flex justify-between items-center mb-4">
                      <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
                          <Calculator size={18} />
@@ -649,12 +649,12 @@ const CashierView: React.FC<CashierViewProps> = ({
 
       {/* Payment & Receipt Preview Modal */}
       {showReceiptPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-gray-800 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh] scale-100 transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh] scale-100 transition-colors animate-scale-in">
                 
                 {/* Left Side: Payment Input */}
                 <div className="flex-1 p-6 md:p-8 flex flex-col justify-between border-r border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
-                     <div>
+                     <div className="overflow-y-auto">
                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
                              <Banknote size={24} className="text-indigo-600 dark:text-indigo-400" />
                              Payment Details
@@ -709,7 +709,7 @@ const CashierView: React.FC<CashierViewProps> = ({
                          </div>
                      </div>
 
-                     <div className="flex gap-4 mt-8">
+                     <div className="flex gap-4 mt-8 shrink-0">
                          <button 
                              onClick={() => setShowReceiptPreview(false)}
                              className="flex-1 py-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
@@ -796,8 +796,8 @@ const CashierView: React.FC<CashierViewProps> = ({
 
       {/* Manual Search Modal */}
       {showSearchModal && (
-        <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl h-[70vh] flex flex-col shadow-2xl overflow-hidden transition-colors">
+        <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl h-[85vh] md:h-[70vh] flex flex-col shadow-2xl overflow-hidden transition-colors animate-scale-in">
                 <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700/50">
                     <div>
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white">Product Search</h3>
@@ -839,7 +839,7 @@ const CashierView: React.FC<CashierViewProps> = ({
                                         setManualSearchQuery('');
                                         setScannerInput('');
                                     }}
-                                    className="flex items-center gap-4 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-500 dark:hover:border-indigo-500 hover:ring-1 hover:ring-indigo-500 transition-all text-left group"
+                                    className="flex items-center gap-4 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-500 dark:hover:border-indigo-500 hover:ring-1 hover:ring-indigo-500 transition-all text-left group animate-fade-in"
                                 >
                                     <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex-shrink-0 overflow-hidden">
                                         <img src={product.image} alt="" className="w-full h-full object-cover" />

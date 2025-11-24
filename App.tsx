@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { PRODUCTS, INITIAL_USERS } from './constants';
-import { Product, CartItem, SaleRecord, User, PrinterSettings, Notification } from './types';
+import { Product, CartItem, SaleRecord, User, PrinterSettings, Notification, RestockRecord, DeliveryRequest, DeliveryItem } from './types';
 import AdminView from './components/AdminView';
 import LoginView from './components/LoginView';
 import CashierView from './components/CashierView';
-import { LogOut, LayoutDashboard, Package, FileText, Users, Settings, Store, Moon, Sun, Menu, X } from 'lucide-react';
+import InventoryStaffView from './components/InventoryStaffView';
+import { LogOut, LayoutDashboard, Package, FileText, Users, Settings, Store, Moon, Sun, Menu, X, Truck } from 'lucide-react';
 import { printReceipt } from './utils/receiptPrinter';
 import { playNotificationSound } from './utils/sound';
 
@@ -17,7 +18,7 @@ const DEFAULT_SETTINGS: PrinterSettings = {
   footerMessage: 'Thank you for shopping! Salamat po!'
 };
 
-type AdminTab = 'dashboard' | 'inventory' | 'add' | 'reports' | 'staff' | 'settings';
+type AdminTab = 'dashboard' | 'inventory' | 'add' | 'reports' | 'staff' | 'settings' | 'deliveries';
 
 const App: React.FC = () => {
   // Authentication State
@@ -32,7 +33,9 @@ const App: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [products, setProducts] = useState<Product[]>(PRODUCTS);
   const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
+  const [restockHistory, setRestockHistory] = useState<RestockRecord[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [deliveryRequests, setDeliveryRequests] = useState<DeliveryRequest[]>([]);
   
   // Config State
   const [printerSettings, setPrinterSettings] = useState<PrinterSettings>(DEFAULT_SETTINGS);
@@ -161,6 +164,109 @@ const App: React.FC = () => {
     setNotifications(prev => prev.map(n => ({...n, read: true})));
   };
 
+  // --- Delivery & Inventory Logic ---
+
+  const handleSubmitDelivery = (items: DeliveryItem[], notes: string) => {
+    if (!currentUser) return;
+    
+    const request: DeliveryRequest = {
+      id: `DR-${Date.now()}`,
+      items,
+      status: 'pending',
+      submittedBy: currentUser.id,
+      submittedByName: currentUser.name,
+      timestamp: Date.now(),
+      notes
+    };
+
+    setDeliveryRequests(prev => [request, ...prev]);
+    
+    // Notify Admin (System notification)
+    const notif: Notification = {
+        id: `notif-del-${Date.now()}`,
+        type: 'delivery',
+        message: `New Delivery Request from ${currentUser.name} (${items.length} items)`,
+        timestamp: Date.now(),
+        read: false
+    };
+    setNotifications(prev => [notif, ...prev]);
+  };
+
+  const handleApproveDelivery = (requestId: string) => {
+    if (!currentUser) return;
+
+    const request = deliveryRequests.find(r => r.id === requestId);
+    if (!request || request.status !== 'pending') return;
+
+    // 1. Update Request Status
+    setDeliveryRequests(prev => prev.map(r => 
+        r.id === requestId 
+        ? { ...r, status: 'approved', reviewedBy: currentUser.name, reviewedAt: Date.now() } 
+        : r
+    ));
+
+    // 2. Update Product Stock and create Log for each item
+    request.items.forEach(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (product) {
+             const stockBefore = product.stock;
+             const stockAfter = stockBefore + item.quantity;
+             
+             // Create Restock Log
+             const record: RestockRecord = {
+                id: `RS-DEL-${Date.now()}-${item.productId}`,
+                productId: item.productId,
+                productName: item.productName,
+                quantityAdded: item.quantity,
+                stockBefore,
+                stockAfter,
+                timestamp: Date.now(),
+                performedBy: `Approved Delivery (${request.submittedByName})`
+            };
+            setRestockHistory(prev => [record, ...prev]);
+
+            // Update product stock
+            setProducts(prev => prev.map(p => 
+                p.id === item.productId ? { ...p, stock: stockAfter } : p
+            ));
+        }
+    });
+
+    // 3. Notify Inventory Staff (Global Notification)
+    const successNotif: Notification = {
+        id: `notif-approve-${Date.now()}`,
+        type: 'delivery',
+        message: `Delivery #${request.id.slice(-6)} Approved! Stock updated.`,
+        timestamp: Date.now(),
+        read: false
+    };
+    setNotifications(prev => [successNotif, ...prev]);
+
+    playNotificationSound();
+  };
+
+  const handleRejectDelivery = (requestId: string) => {
+    if (!currentUser) return;
+    
+    const request = deliveryRequests.find(r => r.id === requestId);
+
+    setDeliveryRequests(prev => prev.map(r => 
+        r.id === requestId 
+        ? { ...r, status: 'rejected', reviewedBy: currentUser.name, reviewedAt: Date.now() } 
+        : r
+    ));
+
+    // Notify Inventory Staff of Rejection
+    const rejectNotif: Notification = {
+        id: `notif-reject-${Date.now()}`,
+        type: 'alert',
+        message: `Delivery #${request?.id.slice(-6)} Rejected by Admin.`,
+        timestamp: Date.now(),
+        read: false
+    };
+    setNotifications(prev => [rejectNotif, ...prev]);
+  };
+
   // --- Admin Logic ---
   const handleAddProduct = (newProduct: Product) => {
     setProducts(prev => [...prev, newProduct]);
@@ -168,6 +274,41 @@ const App: React.FC = () => {
 
   const handleUpdateProduct = (id: string, updates: Partial<Product>) => {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+  
+  const handleRestockProduct = (productId: string, quantityAdded: number) => {
+    const product = products.find(p => p.id === productId);
+    if (!product || !currentUser) return;
+
+    const stockBefore = product.stock;
+    const stockAfter = stockBefore + quantityAdded;
+
+    // Update Product Stock
+    setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: stockAfter } : p));
+
+    // Create Restock Log
+    const record: RestockRecord = {
+        id: `RS-${Date.now()}`,
+        productId,
+        productName: product.name,
+        quantityAdded,
+        stockBefore,
+        stockAfter,
+        timestamp: Date.now(),
+        performedBy: currentUser.name
+    };
+
+    setRestockHistory(prev => [record, ...prev]);
+
+    // Add Notification
+    const notif: Notification = {
+        id: `notif-restock-${Date.now()}`,
+        type: 'system',
+        message: `Restocked ${product.name}: +${quantityAdded} units`,
+        timestamp: Date.now(),
+        read: false
+    };
+    setNotifications(prev => [notif, ...prev]);
   };
 
   const handleAddUser = (newUser: User) => {
@@ -204,11 +345,27 @@ const App: React.FC = () => {
       );
   }
 
+  // Route: Inventory Staff View
+  if (currentUser.role === 'inventory') {
+      return (
+          <InventoryStaffView 
+            currentUser={currentUser}
+            products={products}
+            notifications={notifications}
+            onMarkAllNotificationsRead={markAllNotificationsRead}
+            onSubmitDelivery={handleSubmitDelivery}
+            onLogout={handleLogout}
+            isDarkMode={isDarkMode}
+            onToggleTheme={toggleTheme}
+          />
+      );
+  }
+
   // Sidebar Item Component
-  const NavItem = ({ tab, icon: Icon, label }: { tab: AdminTab; icon: any; label: string }) => (
+  const NavItem = ({ tab, icon: Icon, label, notificationCount }: { tab: AdminTab; icon: any; label: string; notificationCount?: number }) => (
     <button
       onClick={() => setActiveTab(tab)}
-      className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 rounded-r-xl border-l-4 ${
+      className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 rounded-r-xl border-l-4 relative ${
         activeTab === tab
           ? 'bg-indigo-800 text-white border-indigo-400 shadow-md'
           : 'text-indigo-200 hover:bg-indigo-800/50 hover:text-white border-transparent'
@@ -216,8 +373,15 @@ const App: React.FC = () => {
     >
       <Icon size={20} />
       <span className="font-medium">{label}</span>
+      {notificationCount ? (
+          <span className="absolute right-4 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+              {notificationCount}
+          </span>
+      ) : null}
     </button>
   );
+
+  const pendingDeliveriesCount = deliveryRequests.filter(d => d.status === 'pending').length;
 
   // Route: Admin View (Dashboard & Management)
   return (
@@ -258,6 +422,7 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col gap-2 pr-4">
            <NavItem tab="dashboard" icon={LayoutDashboard} label="Dashboard" />
            <NavItem tab="inventory" icon={Package} label="Inventory" />
+           <NavItem tab="deliveries" icon={Truck} label="Deliveries" notificationCount={pendingDeliveriesCount} />
            <NavItem tab="reports" icon={FileText} label="Sales & Reports" />
            <NavItem tab="staff" icon={Users} label="Staff Management" />
            <NavItem tab="settings" icon={Settings} label="Configuration" />
@@ -303,12 +468,17 @@ const App: React.FC = () => {
                   currentView={activeTab}
                   products={products}
                   salesHistory={salesHistory}
+                  restockHistory={restockHistory}
+                  deliveryRequests={deliveryRequests}
                   users={users}
                   printerSettings={printerSettings}
                   lowStockThreshold={lowStockThreshold}
                   notifications={notifications}
                   onAddProduct={handleAddProduct}
                   onUpdateProduct={handleUpdateProduct}
+                  onRestock={handleRestockProduct}
+                  onApproveDelivery={handleApproveDelivery}
+                  onRejectDelivery={handleRejectDelivery}
                   onAddUser={handleAddUser}
                   onDeleteUser={handleDeleteUser}
                   onUpdateSettings={setPrinterSettings}

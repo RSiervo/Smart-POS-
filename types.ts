@@ -25,9 +25,38 @@ export interface SaleRecord {
   cashierName: string;
 }
 
+export interface RestockRecord {
+  id: string;
+  productId: string;
+  productName: string;
+  quantityAdded: number;
+  stockBefore: number;
+  stockAfter: number;
+  timestamp: number;
+  performedBy: string;
+}
+
+export interface DeliveryItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+}
+
+export interface DeliveryRequest {
+  id: string;
+  items: DeliveryItem[];
+  status: 'pending' | 'approved' | 'rejected';
+  submittedBy: string; // User ID
+  submittedByName: string;
+  timestamp: number;
+  reviewedBy?: string;
+  reviewedAt?: number;
+  notes?: string;
+}
+
 export type ViewMode = 'pos' | 'dashboard' | 'settings' | 'admin';
 
-export type UserRole = 'admin' | 'cashier';
+export type UserRole = 'admin' | 'cashier' | 'inventory';
 
 export interface User {
   id: string;
@@ -54,7 +83,7 @@ export interface PrinterSettings {
 
 export interface Notification {
   id: string;
-  type: 'sale' | 'alert' | 'system';
+  type: 'sale' | 'alert' | 'system' | 'delivery';
   message: string;
   timestamp: number;
   read: boolean;

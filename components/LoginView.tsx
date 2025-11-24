@@ -35,9 +35,9 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onTog
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-gray-100 transition-colors relative">
+    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-gray-100 transition-colors relative overflow-hidden">
       {/* Theme Toggle Overlay */}
-      <div className="absolute top-4 right-4 z-50">
+      <div className="absolute top-4 right-4 z-50 animate-fade-in">
         <button 
           onClick={onToggleTheme}
           className="p-2 rounded-full bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 shadow-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -47,23 +47,23 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onTog
       </div>
 
       {/* Left Side - Form */}
-      <div className="flex-1 flex flex-col justify-center py-12 px-6 sm:px-6 lg:px-20 xl:px-24 bg-white dark:bg-gray-800 transition-colors">
+      <div className="flex-1 flex flex-col justify-center py-12 px-6 sm:px-6 lg:px-20 xl:px-24 bg-white dark:bg-gray-800 transition-colors z-10 animate-slide-in-right" style={{animationDuration: '0.6s'}}>
         <div className="mx-auto w-full max-w-sm lg:w-96">
-          <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-10">
+          <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-10 animate-slide-up" style={{animationDelay: '0.1s'}}>
              <div className="p-2.5 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
                 <Store size={28} className="text-white" />
              </div>
              <span className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">SmartSale POS</span>
           </div>
 
-          <div>
+          <div className="animate-slide-up" style={{animationDelay: '0.2s'}}>
             <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Welcome back</h2>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               Please sign in to your account to access the terminal.
             </p>
           </div>
 
-          <div className="mt-8">
+          <div className="mt-8 animate-slide-up" style={{animationDelay: '0.3s'}}>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Username</label>
@@ -127,7 +127,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onTog
               </div>
 
               {error && (
-                <div className="rounded-lg bg-red-50 dark:bg-red-900/30 p-4 border border-red-100 dark:border-red-800">
+                <div className="rounded-lg bg-red-50 dark:bg-red-900/30 p-4 border border-red-100 dark:border-red-800 animate-fade-in">
                   <div className="flex">
                     <div className="ml-3">
                       <h3 className="text-sm font-medium text-red-800 dark:text-red-300">{error}</h3>
@@ -152,10 +152,10 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onTog
               </button>
             </form>
             
-            <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-700">
+            <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-700 animate-fade-in" style={{animationDelay: '0.5s'}}>
                 <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-3">Demo Accounts</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-indigo-300 transition-colors cursor-pointer" onClick={() => { setUsername('admin'); setPassword('123'); }}>
                         <div className="flex items-center gap-2 mb-1">
                             <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                             <span className="font-semibold text-xs text-gray-900 dark:text-gray-100">Admin</span>
@@ -165,7 +165,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onTog
                             Pass: 123
                         </div>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-indigo-300 transition-colors cursor-pointer" onClick={() => { setUsername('cashier1'); setPassword('123'); }}>
                         <div className="flex items-center gap-2 mb-1">
                             <span className="w-2 h-2 rounded-full bg-green-500"></span>
                             <span className="font-semibold text-xs text-gray-900 dark:text-gray-100">Cashier</span>
@@ -182,14 +182,14 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin, isDarkMode, onTog
       </div>
 
       {/* Right Side - Image */}
-      <div className="hidden lg:block relative w-0 flex-1 overflow-hidden bg-gray-900">
+      <div className="hidden lg:block relative w-0 flex-1 overflow-hidden bg-gray-900 animate-fade-in">
         <img
           className="absolute inset-0 h-full w-full object-cover opacity-80"
           src="https://images.unsplash.com/photo-1578916171728-46686eac8d58?q=80&w=1974&auto=format&fit=crop"
           alt="Supermarket aisle"
         />
         <div className="absolute inset-0 bg-gradient-to-l from-transparent to-black/60" />
-        <div className="absolute bottom-0 left-0 right-0 p-16 text-white z-10">
+        <div className="absolute bottom-0 left-0 right-0 p-16 text-white z-10 animate-slide-up" style={{animationDelay: '0.5s'}}>
             <div className="max-w-lg">
                 <div className="h-1 w-20 bg-indigo-500 mb-6 rounded-full"></div>
                 <h2 className="text-5xl font-bold mb-6 leading-tight">Smart Inventory Management</h2>

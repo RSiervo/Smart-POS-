@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Product, SaleRecord, User, PrinterSettings, Notification } from '../types';
+import { Product, SaleRecord, User, PrinterSettings, Notification, RestockRecord, DeliveryRequest } from '../types';
 import { 
     Plus, Search, Edit2, Save, X, Tag, AlertTriangle, 
     FileText, Sparkles, Receipt, ChevronDown, ChevronUp, Users, 
     Trash2, Filter, TrendingUp, ShoppingBag, 
     CreditCard, Settings, Printer, BrainCircuit, Lightbulb, Upload, Image as ImageIcon,
-    Bell, CheckCircle, Download, FileSpreadsheet
+    Bell, CheckCircle, Download, FileSpreadsheet, PackagePlus, ClipboardList, Truck, Check, XCircle
 } from 'lucide-react';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -15,18 +15,23 @@ import { CATEGORIES } from '../constants';
 import { generateInventoryReport, getRestockAdvice, generateBusinessStrategy } from '../services/geminiService';
 import { printReceipt } from '../utils/receiptPrinter';
 
-type AdminTab = 'dashboard' | 'inventory' | 'add' | 'reports' | 'staff' | 'settings';
+type AdminTab = 'dashboard' | 'inventory' | 'add' | 'reports' | 'staff' | 'settings' | 'deliveries';
 
 interface AdminViewProps {
   currentView: AdminTab;
   products: Product[];
   salesHistory: SaleRecord[];
+  restockHistory: RestockRecord[];
+  deliveryRequests: DeliveryRequest[];
   users: User[];
   printerSettings: PrinterSettings;
   lowStockThreshold: number;
   notifications: Notification[];
   onAddProduct: (product: Product) => void;
   onUpdateProduct: (id: string, updates: Partial<Product>) => void;
+  onRestock: (productId: string, quantityAdded: number) => void;
+  onApproveDelivery: (id: string) => void;
+  onRejectDelivery: (id: string) => void;
   onAddUser: (user: User) => void;
   onDeleteUser: (id: string) => void;
   onUpdateSettings: (settings: PrinterSettings) => void;
@@ -40,11 +45,12 @@ interface AdminViewProps {
 const CHART_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
 
 type TimeFilter = 'today' | 'week' | 'month' | 'year' | 'all';
+type ReportType = 'sales' | 'restock';
 
 const AdminView: React.FC<AdminViewProps> = ({ 
-    currentView, products, salesHistory = [], users, printerSettings, 
+    currentView, products, salesHistory = [], restockHistory = [], deliveryRequests = [], users, printerSettings, 
     lowStockThreshold, notifications,
-    onAddProduct, onUpdateProduct, onAddUser, onDeleteUser, onUpdateSettings, 
+    onAddProduct, onUpdateProduct, onRestock, onApproveDelivery, onRejectDelivery, onAddUser, onDeleteUser, onUpdateSettings, 
     onUpdateLowStockThreshold, onMarkAllNotificationsRead, onChangeView, isDarkMode
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,8 +60,15 @@ const AdminView: React.FC<AdminViewProps> = ({
   const [restockAdvice, setRestockAdvice] = useState<string | null>(null);
   const [isLoadingAdvice, setIsLoadingAdvice] = useState(false);
   
+  // Restock Modal State
+  const [restockingProduct, setRestockingProduct] = useState<Product | null>(null);
+  const [restockQtyToAdd, setRestockQtyToAdd] = useState<string>('');
+
   // Dashboard Date Filter
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
+
+  // Reports View State
+  const [activeReportType, setActiveReportType] = useState<ReportType>('sales');
 
   // AI Report State (Dashboard & Reports)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -67,6 +80,9 @@ const AdminView: React.FC<AdminViewProps> = ({
   // Notifications Popover State
   const [showNotifications, setShowNotifications] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
+  
+  // Delivery View State
+  const [expandedDeliveryId, setExpandedDeliveryId] = useState<string | null>(null);
 
   // Add Product Form State
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
@@ -247,6 +263,28 @@ const AdminView: React.FC<AdminViewProps> = ({
     });
     setEditingId(null);
   };
+  
+  const handleOpenRestock = (product: Product) => {
+      setRestockingProduct(product);
+      setRestockQtyToAdd('');
+  };
+
+  const handleRestockSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!restockingProduct) return;
+      
+      const qtyToAdd = parseInt(restockQtyToAdd);
+      if (isNaN(qtyToAdd) || qtyToAdd <= 0) {
+          alert("Please enter a valid quantity to add.");
+          return;
+      }
+
+      // Use the Restock Callback to log this action
+      onRestock(restockingProduct.id, qtyToAdd);
+
+      setRestockingProduct(null);
+      setRestockQtyToAdd('');
+  };
 
   const handleGenerateReport = async () => {
     setIsGeneratingReport(true);
@@ -359,57 +397,127 @@ const AdminView: React.FC<AdminViewProps> = ({
   // --- Export Functions ---
 
   const handleExportCSV = () => {
-    const headers = ['Transaction ID', 'Date', 'Time', 'Cashier', 'Customer', 'Items Summary', 'Total Amount'];
-    const rows = filteredSalesHistory.map(sale => {
-        const date = new Date(sale.timestamp);
-        const dateStr = date.toLocaleDateString();
-        const timeStr = date.toLocaleTimeString();
-        const itemSummary = sale.items.map(i => `${i.name} (${i.quantity})`).join('; ');
-        
-        // Escape commas for CSV
-        return [
-            sale.id,
-            dateStr,
-            timeStr,
-            sale.cashierName,
-            sale.customerName,
-            `"${itemSummary}"`, // Quote items to handle commas
-            sale.total.toFixed(2)
-        ].join(',');
-    });
+    if (activeReportType === 'sales') {
+        const headers = ['Transaction ID', 'Date', 'Time', 'Cashier', 'Customer', 'Items Summary', 'Total Amount'];
+        const rows = filteredSalesHistory.map(sale => {
+            const date = new Date(sale.timestamp);
+            const dateStr = date.toLocaleDateString();
+            const timeStr = date.toLocaleTimeString();
+            const itemSummary = sale.items.map(i => `${i.name} (${i.quantity})`).join('; ');
+            
+            return [
+                sale.id,
+                dateStr,
+                timeStr,
+                sale.cashierName,
+                sale.customerName,
+                `"${itemSummary}"`, 
+                sale.total.toFixed(2)
+            ].join(',');
+        });
 
-    const csvContent = "data:text/csv;charset=utf-8," 
-        + headers.join(',') + "\n" 
-        + rows.join("\n");
+        const csvContent = "data:text/csv;charset=utf-8," + headers.join(',') + "\n" + rows.join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `sales_report_${selectedCashierFilter}_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } else {
+        // RESTOCK REPORT CSV
+        const headers = ['Restock ID', 'Date', 'Time', 'Product', 'Qty Added', 'Stock Before', 'Stock After', 'Performed By'];
+        const rows = restockHistory.map(rec => {
+            const date = new Date(rec.timestamp);
+            return [
+                rec.id,
+                date.toLocaleDateString(),
+                date.toLocaleTimeString(),
+                `"${rec.productName}"`,
+                rec.quantityAdded,
+                rec.stockBefore,
+                rec.stockAfter,
+                rec.performedBy
+            ].join(',');
+        });
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    const filename = `sales_report_${selectedCashierFilter}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+        const csvContent = "data:text/csv;charset=utf-8," + headers.join(',') + "\n" + rows.join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `restock_report_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
   };
 
   const handlePrintReport = () => {
     const printWindow = window.open('', '', 'width=800,height=600');
     if (!printWindow) return;
 
-    const tableRows = filteredSalesHistory.map(sale => `
-        <tr>
-            <td>${new Date(sale.timestamp).toLocaleString()}</td>
-            <td>${sale.id}</td>
-            <td>${sale.cashierName}</td>
-            <td>${sale.items.length}</td>
-            <td style="text-align:right">₱${sale.total.toFixed(2)}</td>
-        </tr>
-    `).join('');
+    let title = '';
+    let tableHeader = '';
+    let tableRows = '';
+    let summaryHtml = '';
+
+    if (activeReportType === 'sales') {
+        title = 'Sales Report';
+        summaryHtml = `
+            <div class="summary">
+                Total Transactions: ${filteredSalesHistory.length} <br/>
+                Total Revenue: ₱${totalHistorySales.toFixed(2)}
+            </div>
+        `;
+        tableHeader = `
+            <tr>
+                <th>Date</th>
+                <th>Transaction ID</th>
+                <th>Cashier</th>
+                <th>Items</th>
+                <th style="text-align:right">Total</th>
+            </tr>
+        `;
+        tableRows = filteredSalesHistory.map(sale => `
+            <tr>
+                <td>${new Date(sale.timestamp).toLocaleString()}</td>
+                <td>${sale.id}</td>
+                <td>${sale.cashierName}</td>
+                <td>${sale.items.length}</td>
+                <td style="text-align:right">₱${sale.total.toFixed(2)}</td>
+            </tr>
+        `).join('');
+    } else {
+        title = 'Restock Inventory Report';
+        summaryHtml = `<div class="summary">Total Restock Events: ${restockHistory.length}</div>`;
+        tableHeader = `
+            <tr>
+                <th>Date/Time</th>
+                <th>Restock ID</th>
+                <th>Product Name</th>
+                <th style="text-align:center">Added</th>
+                <th style="text-align:center">Before</th>
+                <th style="text-align:center">Remaining (After)</th>
+                <th>User</th>
+            </tr>
+        `;
+        tableRows = restockHistory.map(rec => `
+            <tr>
+                <td>${new Date(rec.timestamp).toLocaleString()}</td>
+                <td>${rec.id}</td>
+                <td>${rec.productName}</td>
+                <td style="text-align:center; font-weight:bold; color:green;">+${rec.quantityAdded}</td>
+                <td style="text-align:center">${rec.stockBefore}</td>
+                <td style="text-align:center; font-weight:bold;">${rec.stockAfter}</td>
+                <td>${rec.performedBy}</td>
+            </tr>
+        `).join('');
+    }
 
     const html = `
         <html>
             <head>
-                <title>Sales Report</title>
+                <title>${title}</title>
                 <style>
                     body { font-family: sans-serif; padding: 20px; }
                     table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -424,27 +532,13 @@ const AdminView: React.FC<AdminViewProps> = ({
             </head>
             <body>
                 <div class="header">
-                    <h2>${printerSettings.storeName} - Sales Report</h2>
+                    <h2>${printerSettings.storeName} - ${title}</h2>
                     <p>Generated: ${new Date().toLocaleString()}</p>
-                    <p>Filter: ${selectedCashierFilter === 'all' ? 'All Cashiers' : 'Cashier ID: ' + selectedCashierFilter}</p>
                 </div>
-                <div class="summary">
-                    Total Transactions: ${filteredSalesHistory.length} <br/>
-                    Total Revenue: ₱${totalHistorySales.toFixed(2)}
-                </div>
+                ${summaryHtml}
                 <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Transaction ID</th>
-                            <th>Cashier</th>
-                            <th>Items</th>
-                            <th style="text-align:right">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tableRows}
-                    </tbody>
+                    <thead>${tableHeader}</thead>
+                    <tbody>${tableRows}</tbody>
                 </table>
                 <script>
                     window.onload = function() { window.print(); }
@@ -484,7 +578,7 @@ const AdminView: React.FC<AdminViewProps> = ({
       
       {/* --- DASHBOARD TAB --- */}
       {currentView === 'dashboard' && (
-        <div className="p-4 md:p-8 space-y-8 max-w-7xl mx-auto">
+        <div className="p-4 md:p-8 space-y-8 max-w-7xl mx-auto animate-fade-in">
             {/* Welcome & Controls Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-200 dark:border-gray-700 pb-6">
                 <div>
@@ -501,11 +595,11 @@ const AdminView: React.FC<AdminViewProps> = ({
                          >
                              <Bell size={20} className="text-gray-600 dark:text-gray-300" />
                              {unreadNotifications > 0 && (
-                                 <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-gray-800"></span>
+                                 <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse-fast"></span>
                              )}
                          </button>
                          {showNotifications && (
-                             <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                             <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden animate-scale-in origin-top-right">
                                  <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700/50">
                                      <span className="font-bold text-sm text-gray-700 dark:text-gray-200">Notifications</span>
                                      <button onClick={onMarkAllNotificationsRead} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Mark all read</button>
@@ -517,7 +611,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                                          notifications.map(n => (
                                              <div key={n.id} className={`p-3 border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${!n.read ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}>
                                                  <div className="flex items-start gap-3">
-                                                     <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${n.type === 'alert' ? 'bg-red-500' : 'bg-indigo-500'}`}></div>
+                                                     <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${n.type === 'alert' ? 'bg-red-500' : (n.type === 'delivery' ? 'bg-emerald-500' : 'bg-indigo-500')}`}></div>
                                                      <div>
                                                          <p className="text-sm text-gray-800 dark:text-gray-200 leading-snug">{n.message}</p>
                                                          <p className="text-xs text-gray-400 mt-1">{new Date(n.timestamp).toLocaleTimeString()}</p>
@@ -559,7 +653,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow animate-slide-up" style={{animationDelay: '0ms'}}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-gray-900 dark:text-white">
                         <CreditCard size={80} />
                     </div>
@@ -578,7 +672,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow animate-slide-up" style={{animationDelay: '100ms'}}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-gray-900 dark:text-white">
                         <ShoppingBag size={80} />
                     </div>
@@ -594,7 +688,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow animate-slide-up" style={{animationDelay: '200ms'}}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-gray-900 dark:text-white">
                         <Tag size={80} />
                     </div>
@@ -610,7 +704,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border-l-4 border-amber-500 border-y border-r border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border-l-4 border-amber-500 border-y border-r border-gray-100 dark:border-gray-700 flex flex-col justify-between h-40 relative overflow-hidden group hover:shadow-md transition-shadow animate-slide-up" style={{animationDelay: '300ms'}}>
                      <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-gray-900 dark:text-white">
                         <AlertTriangle size={80} />
                     </div>
@@ -629,7 +723,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 h-[400px] md:h-[450px]">
+                <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 h-[400px] md:h-[450px] animate-fade-in" style={{animationDelay: '400ms'}}>
                     <div className="flex justify-between items-center mb-6">
                          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Sales Trend Analysis</h3>
                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 dark:text-gray-300 uppercase">{timeFilter}</span>
@@ -660,7 +754,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                     </ResponsiveContainer>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 h-[400px] md:h-[450px]">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 h-[400px] md:h-[450px] animate-fade-in" style={{animationDelay: '500ms'}}>
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Top Categories</h3>
                     <ResponsiveContainer width="100%" height="75%">
                         <PieChart>
@@ -698,7 +792,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
       {/* --- INVENTORY TAB --- */}
       {currentView === 'inventory' && (
-        <div className="p-4 md:p-8 space-y-6">
+        <div className="p-4 md:p-8 space-y-6 animate-fade-in">
              <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Inventory Management</h2>
                 <button 
@@ -844,10 +938,22 @@ const AdminView: React.FC<AdminViewProps> = ({
                                                         <button onClick={() => setEditingId(null)} className="p-1 text-red-600 hover:bg-red-50 rounded"><X size={16} /></button>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => startEditing(product)} className="flex items-center gap-1 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                                                        <Edit2 size={16} />
-                                                        <span className="text-xs hidden lg:inline">Edit</span>
-                                                    </button>
+                                                    <div className="flex items-center gap-2">
+                                                        <button 
+                                                            onClick={() => handleOpenRestock(product)} 
+                                                            className="p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30 rounded transition-colors"
+                                                            title="Restock"
+                                                        >
+                                                            <PackagePlus size={18} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => startEditing(product)} 
+                                                            className="p-1 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit2 size={16} />
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>
@@ -870,9 +976,191 @@ const AdminView: React.FC<AdminViewProps> = ({
         </div>
       )}
 
+      {/* --- DELIVERIES TAB --- */}
+      {currentView === 'deliveries' && (
+        <div className="p-4 md:p-8 space-y-6 animate-fade-in">
+             <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                    <Truck className="text-indigo-600 dark:text-indigo-400" />
+                    Delivery Requests
+                </h2>
+             </div>
+             
+             <div className="grid grid-cols-1 gap-4">
+                 {deliveryRequests.length === 0 ? (
+                     <div className="bg-white dark:bg-gray-800 rounded-2xl p-12 flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-200 dark:border-gray-700">
+                         <Truck size={48} className="opacity-20 mb-4" />
+                         <p>No delivery requests found.</p>
+                     </div>
+                 ) : (
+                     deliveryRequests.map(request => (
+                         <div key={request.id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-slide-up">
+                             <div 
+                                className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors gap-4"
+                                onClick={() => setExpandedDeliveryId(expandedDeliveryId === request.id ? null : request.id)}
+                             >
+                                 <div className="flex items-center gap-4">
+                                     <div className={`p-3 rounded-xl ${
+                                         request.status === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
+                                         request.status === 'approved' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                         'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                                     }`}>
+                                         {request.status === 'pending' ? <Truck size={24} /> : (request.status === 'approved' ? <CheckCircle size={24} /> : <XCircle size={24} />)}
+                                     </div>
+                                     <div>
+                                         <h4 className="font-bold text-lg text-gray-900 dark:text-white">Delivery {request.id}</h4>
+                                         <p className="text-sm text-gray-500 dark:text-gray-400">
+                                             Submitted by <span className="font-semibold">{request.submittedByName}</span> • {new Date(request.timestamp).toLocaleString()}
+                                         </p>
+                                     </div>
+                                 </div>
+                                 <div className="flex items-center gap-6">
+                                     <div className="text-right">
+                                         <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Status</p>
+                                         <span className={`font-bold capitalize ${
+                                             request.status === 'pending' ? 'text-amber-500' :
+                                             request.status === 'approved' ? 'text-emerald-500' :
+                                             'text-red-500'
+                                         }`}>{request.status}</span>
+                                     </div>
+                                     <div className="text-right hidden sm:block">
+                                         <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Items</p>
+                                         <p className="font-bold text-gray-900 dark:text-white">{request.items.length}</p>
+                                     </div>
+                                     {expandedDeliveryId === request.id ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
+                                 </div>
+                             </div>
+
+                             {expandedDeliveryId === request.id && (
+                                 <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20 p-6 animate-fade-in">
+                                     {request.notes && (
+                                         <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+                                             <p className="text-xs text-gray-400 font-bold uppercase mb-1">Notes</p>
+                                             <p className="text-gray-700 dark:text-gray-300 text-sm">{request.notes}</p>
+                                         </div>
+                                     )}
+                                     
+                                     <table className="w-full text-sm text-left mb-6">
+                                         <thead className="text-gray-500 dark:text-gray-400 font-medium border-b border-gray-200 dark:border-gray-700">
+                                             <tr>
+                                                 <th className="py-2">Product Name</th>
+                                                 <th className="py-2 text-right">Quantity Added</th>
+                                             </tr>
+                                         </thead>
+                                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                             {request.items.map((item, idx) => (
+                                                 <tr key={idx}>
+                                                     <td className="py-3 font-medium text-gray-900 dark:text-white">{item.productName}</td>
+                                                     <td className="py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">+{item.quantity}</td>
+                                                 </tr>
+                                             ))}
+                                         </tbody>
+                                     </table>
+
+                                     {request.status === 'pending' && (
+                                         <div className="flex justify-end gap-3">
+                                             <button 
+                                                onClick={() => onRejectDelivery(request.id)}
+                                                className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 rounded-lg font-medium transition-colors"
+                                             >
+                                                 Reject
+                                             </button>
+                                             <button 
+                                                onClick={() => onApproveDelivery(request.id)}
+                                                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md transition-colors flex items-center gap-2"
+                                             >
+                                                 <Check size={18} />
+                                                 Confirm Stock Update
+                                             </button>
+                                         </div>
+                                     )}
+                                     {request.status !== 'pending' && (
+                                         <div className="text-right text-sm text-gray-500 dark:text-gray-400">
+                                             Reviewed by {request.reviewedBy} on {new Date(request.reviewedAt || 0).toLocaleString()}
+                                         </div>
+                                     )}
+                                 </div>
+                             )}
+                         </div>
+                     ))
+                 )}
+             </div>
+        </div>
+      )}
+
+      {/* --- RESTOCK MODAL --- */}
+      {restockingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-scale-in">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <PackagePlus className="text-emerald-600" size={24} />
+                        Restock Inventory
+                    </h3>
+                    <button 
+                        onClick={() => setRestockingProduct(null)} 
+                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <form onSubmit={handleRestockSubmit}>
+                    <div className="mb-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl">
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Product</p>
+                        <p className="font-bold text-gray-900 dark:text-white text-lg line-clamp-1">{restockingProduct.name}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Current</p>
+                            <p className="text-2xl font-mono font-medium text-gray-700 dark:text-gray-300">{restockingProduct.stock}</p>
+                        </div>
+                        <div className="text-right">
+                             <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">New Total</p>
+                             <p className="text-2xl font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                 {restockingProduct.stock + (parseInt(restockQtyToAdd) || 0)}
+                             </p>
+                        </div>
+                    </div>
+
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity to Add</label>
+                        <input 
+                            type="number"
+                            min="1"
+                            value={restockQtyToAdd}
+                            onChange={(e) => setRestockQtyToAdd(e.target.value)}
+                            placeholder="Enter amount..."
+                            className="w-full px-4 py-3 border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 text-lg font-bold"
+                            autoFocus
+                        />
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button 
+                            type="button"
+                            onClick={() => setRestockingProduct(null)}
+                            className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit"
+                            disabled={!restockQtyToAdd || parseInt(restockQtyToAdd) <= 0}
+                            className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Confirm Restock
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
+
       {/* --- ADD PRODUCT TAB --- */}
       {currentView === 'add' && (
-        <div className="p-4 md:p-8 max-w-3xl mx-auto">
+        <div className="p-4 md:p-8 max-w-3xl mx-auto animate-slide-up">
             <div className="flex items-center gap-2 mb-6">
                  <button onClick={() => onChangeView('inventory')} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                      <X size={24} />
@@ -1016,7 +1304,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
       {/* --- STAFF TAB --- */}
       {currentView === 'staff' && (
-        <div className="p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
             {/* Staff List */}
             <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 <div className="p-6 border-b border-gray-100 dark:border-gray-700">
@@ -1041,7 +1329,11 @@ const AdminView: React.FC<AdminViewProps> = ({
                                     <td className="px-6 py-4 font-medium">{user.name}</td>
                                     <td className="px-6 py-4 text-gray-500 dark:text-gray-400">{user.username}</td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${user.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'}`}>
+                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                            user.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 
+                                            user.role === 'cashier' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
+                                            'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                        }`}>
                                             {user.role.toUpperCase()}
                                         </span>
                                     </td>
@@ -1106,6 +1398,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                         >
                             <option value="cashier">Cashier</option>
                             <option value="admin">Admin</option>
+                            <option value="inventory">Inventory Staff</option>
                         </select>
                     </div>
                     <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors">
@@ -1118,7 +1411,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
       {/* --- SETTINGS TAB --- */}
       {currentView === 'settings' && (
-        <div className="p-4 md:p-8 max-w-3xl mx-auto">
+        <div className="p-4 md:p-8 max-w-3xl mx-auto animate-fade-in">
              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
                  <div className="p-6 border-b border-gray-100 dark:border-gray-700">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1243,29 +1536,50 @@ const AdminView: React.FC<AdminViewProps> = ({
 
       {/* --- REPORTS TAB --- */}
       {currentView === 'reports' && (
-        <div className="p-4 md:p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="p-4 md:p-8 grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
             {/* Sales History Column */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col h-[500px] md:h-[600px] transition-colors">
                 <div className="p-6 border-b border-gray-100 dark:border-gray-700">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <Receipt className="text-indigo-600 dark:text-indigo-400" />
-                            Sales History
-                        </h3>
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Filter size={16} className="text-gray-400" />
-                            <select
-                                value={selectedCashierFilter}
-                                onChange={(e) => setSelectedCashierFilter(e.target.value)}
-                                className="flex-1 sm:flex-none px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-white dark:hover:bg-gray-600 transition-colors"
-                            >
-                                <option value="all">All Cashiers</option>
-                                {users.filter(u => u.role === 'cashier' || u.role === 'admin').map(user => (
-                                    <option key={user.id} value={user.id}>{user.name}</option>
-                                ))}
-                            </select>
+                        <div className="flex items-center gap-4">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                {activeReportType === 'sales' ? <Receipt className="text-indigo-600 dark:text-indigo-400" /> : <ClipboardList className="text-emerald-600 dark:text-emerald-400" />}
+                                {activeReportType === 'sales' ? 'Sales History' : 'Restock History'}
+                            </h3>
+                            {/* Report Type Switcher */}
+                            <div className="bg-gray-100 dark:bg-gray-700 p-1 rounded-lg flex text-xs font-bold">
+                                <button 
+                                    onClick={() => setActiveReportType('sales')}
+                                    className={`px-3 py-1 rounded-md transition-all ${activeReportType === 'sales' ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+                                >
+                                    Sales
+                                </button>
+                                <button 
+                                    onClick={() => setActiveReportType('restock')}
+                                    className={`px-3 py-1 rounded-md transition-all ${activeReportType === 'restock' ? 'bg-white dark:bg-gray-600 text-emerald-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+                                >
+                                    Restock
+                                </button>
+                            </div>
                         </div>
+
+                        {activeReportType === 'sales' && (
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <Filter size={16} className="text-gray-400" />
+                                <select
+                                    value={selectedCashierFilter}
+                                    onChange={(e) => setSelectedCashierFilter(e.target.value)}
+                                    className="flex-1 sm:flex-none px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-white dark:hover:bg-gray-600 transition-colors"
+                                >
+                                    <option value="all">All Cashiers</option>
+                                    {users.filter(u => u.role === 'cashier' || u.role === 'admin').map(user => (
+                                        <option key={user.id} value={user.id}>{user.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
+                    
                     <div className="flex flex-col sm:flex-row justify-between items-end gap-2">
                         <div className="flex gap-2 w-full sm:w-auto">
                             <button 
@@ -1285,62 +1599,111 @@ const AdminView: React.FC<AdminViewProps> = ({
                                 Print Report (PDF)
                             </button>
                         </div>
-                        <div className="text-right">
-                             <p className="text-xs text-gray-400 uppercase tracking-wide">Total Sales</p>
-                             <p className="text-lg font-bold text-indigo-900 dark:text-indigo-300">₱{totalHistorySales.toFixed(2)}</p>
-                        </div>
+                        {activeReportType === 'sales' && (
+                            <div className="text-right">
+                                <p className="text-xs text-gray-400 uppercase tracking-wide">Total Sales</p>
+                                <p className="text-lg font-bold text-indigo-900 dark:text-indigo-300">₱{totalHistorySales.toFixed(2)}</p>
+                            </div>
+                        )}
+                        {activeReportType === 'restock' && (
+                             <div className="text-right">
+                                <p className="text-xs text-gray-400 uppercase tracking-wide">Events Logged</p>
+                                <p className="text-lg font-bold text-emerald-900 dark:text-emerald-300">{restockHistory.length}</p>
+                            </div>
+                        )}
                     </div>
                 </div>
+                
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {filteredSalesHistory.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                             <Receipt size={32} strokeWidth={1.5} className="mb-2 opacity-50"/>
-                             <p>No transactions found.</p>
-                        </div>
-                    ) : (
-                        filteredSalesHistory.map((sale) => (
-                            <div key={sale.id} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                                <div 
-                                    className="bg-gray-50 dark:bg-gray-700/50 p-4 flex items-center justify-between cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                    onClick={() => setExpandedSaleId(expandedSaleId === sale.id ? null : sale.id)}
-                                >
-                                    <div>
-                                        <p className="font-semibold text-gray-900 dark:text-white">{sale.customerName}</p>
-                                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            <span>{new Date(sale.timestamp).toLocaleString()}</span>
-                                            <span>•</span>
-                                            <span className="text-indigo-600 dark:text-indigo-300 font-medium bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full whitespace-nowrap">By: {sale.cashierName || 'Unknown'}</span>
+                    {activeReportType === 'sales' ? (
+                        filteredSalesHistory.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                                <Receipt size={32} strokeWidth={1.5} className="mb-2 opacity-50"/>
+                                <p>No transactions found.</p>
+                            </div>
+                        ) : (
+                            filteredSalesHistory.map((sale) => (
+                                <div key={sale.id} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden animate-slide-up">
+                                    <div 
+                                        className="bg-gray-50 dark:bg-gray-700/50 p-4 flex items-center justify-between cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        onClick={() => setExpandedSaleId(expandedSaleId === sale.id ? null : sale.id)}
+                                    >
+                                        <div>
+                                            <p className="font-semibold text-gray-900 dark:text-white">{sale.customerName}</p>
+                                            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                <span>{new Date(sale.timestamp).toLocaleString()}</span>
+                                                <span>•</span>
+                                                <span className="text-indigo-600 dark:text-indigo-300 font-medium bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full whitespace-nowrap">By: {sale.cashierName || 'Unknown'}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-bold text-indigo-900 dark:text-indigo-300">₱{sale.total.toFixed(2)}</span>
+                                            {expandedSaleId === sale.id ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="font-bold text-indigo-900 dark:text-indigo-300">₱{sale.total.toFixed(2)}</span>
-                                        {expandedSaleId === sale.id ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
-                                    </div>
-                                </div>
-                                {expandedSaleId === sale.id && (
-                                    <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
-                                        <table className="w-full text-sm">
-                                            <thead>
-                                                <tr className="text-left text-xs text-gray-400 uppercase">
-                                                    <th className="pb-2">Item</th>
-                                                    <th className="pb-2 text-right">Qty</th>
-                                                    <th className="pb-2 text-right">Price</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="text-gray-700 dark:text-gray-300">
-                                                {sale.items.map((item, idx) => (
-                                                    <tr key={idx} className="border-b border-gray-50 dark:border-gray-700 last:border-0">
-                                                        <td className="py-2">{item.name}</td>
-                                                        <td className="py-2 text-right font-medium">{item.quantity}</td>
-                                                        <td className="py-2 text-right text-gray-500 dark:text-gray-400">₱{item.price.toFixed(2)}</td>
+                                    {expandedSaleId === sale.id && (
+                                        <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 animate-fade-in">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="text-left text-xs text-gray-400 uppercase">
+                                                        <th className="pb-2">Item</th>
+                                                        <th className="pb-2 text-right">Qty</th>
+                                                        <th className="pb-2 text-right">Price</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                                                </thead>
+                                                <tbody className="text-gray-700 dark:text-gray-300">
+                                                    {sale.items.map((item, idx) => (
+                                                        <tr key={idx} className="border-b border-gray-50 dark:border-gray-700 last:border-0">
+                                                            <td className="py-2">{item.name}</td>
+                                                            <td className="py-2 text-right font-medium">{item.quantity}</td>
+                                                            <td className="py-2 text-right text-gray-500 dark:text-gray-400">₱{item.price.toFixed(2)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )
+                    ) : (
+                        // RESTOCK HISTORY TABLE VIEW
+                        restockHistory.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                                <PackagePlus size={32} strokeWidth={1.5} className="mb-2 opacity-50"/>
+                                <p>No restock records found.</p>
                             </div>
-                        ))
+                        ) : (
+                            <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 font-medium sticky top-0">
+                                    <tr>
+                                        <th className="px-4 py-3">Date</th>
+                                        <th className="px-4 py-3">Product</th>
+                                        <th className="px-4 py-3 text-center">Added</th>
+                                        <th className="px-4 py-3 text-center">Remaining</th>
+                                        <th className="px-4 py-3">User</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700 text-gray-700 dark:text-gray-300">
+                                    {restockHistory.map(rec => (
+                                        <tr key={rec.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors animate-slide-up">
+                                            <td className="px-4 py-3">
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium">{new Date(rec.timestamp).toLocaleDateString()}</span>
+                                                    <span className="text-xs text-gray-400">{new Date(rec.timestamp).toLocaleTimeString()}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium">{rec.productName}</td>
+                                            <td className="px-4 py-3 text-center text-emerald-600 dark:text-emerald-400 font-bold">+{rec.quantityAdded}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">{rec.stockAfter}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{rec.performedBy}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )
                     )}
                 </div>
             </div>
@@ -1373,7 +1736,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30 dark:bg-gray-900/30">
                     {aiReport ? (
-                        <div className="prose prose-sm max-w-none">
+                        <div className="prose prose-sm max-w-none animate-fade-in">
                             <ReportDisplay text={aiReport} />
                         </div>
                     ) : (
@@ -1393,8 +1756,8 @@ const AdminView: React.FC<AdminViewProps> = ({
 
       {/* --- AI STRATEGY MODAL --- */}
       {showStrategyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-            <div className="bg-white dark:bg-gray-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-scale-in">
                  <div className="p-6 bg-gradient-to-r from-violet-600 to-indigo-600 flex justify-between items-center text-white rounded-t-2xl">
                      <div className="flex items-center gap-3">
                          <div className="bg-white/20 p-2 rounded-lg">
@@ -1425,7 +1788,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                              </div>
                          </div>
                      ) : (
-                         <div className="prose prose-indigo dark:prose-invert max-w-none">
+                         <div className="prose prose-indigo dark:prose-invert max-w-none animate-fade-in">
                              {strategyContent ? (
                                  <ReportDisplay text={strategyContent} />
                              ) : (
